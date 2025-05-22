@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sanhok Map</title>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 600px; }
+  </style>
+</head>
+<body>
+  <h2>Sanhok Navigation</h2>
+  <select id="start"></select>
+  <select id="end"></select>
+  <button onclick="findPath()">Find Path</button>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Initialize map with CRS.Simple and set bounds correctly
+    const map = L.map('map', {
+      crs: L.CRS.Simple,
+      minZoom: -1,
+      maxZoom: 2
+    });
+
+    // Define the bounds of the image and overlay
+    const bounds = [[0, 0], [1000, 1000]];
+    const image = L.imageOverlay("/static/mapnav/sanhok.jpg", bounds).addTo(map);
+    map.fitBounds(bounds);
+
+    // Your node coordinates: [y, x] for Leaflet (lat, lng)
+    // Make sure to flip coordinates: Leaflet uses [lat, lng] = [y, x]
+    const nodes = {
+      "Bootcamp": [514.78, 453.77],
+      "Paradise": [668.33, 675.64],
+      "Quarry": [388.31, 684.80],
+      "Ruins": [395.01, 309.00],
+      "Camp_Alpha": [587.81, 218.55]
+    };
+
+    // Populate dropdowns
+    const dropdowns = ["start", "end"];
+    dropdowns.forEach(id => {
+      const sel = document.getElementById(id);
+      Object.keys(nodes).forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      });
+    });
+
+    // Add markers on the map
+    const markers = {};
+    for (let name in nodes) {
+      // Note: Leaflet expects [lat, lng], so no flip needed if coords already correct
+      const marker = L.circleMarker(nodes[name], {radius: 6, color: 'blue'}).addTo(map);
+      marker.bindTooltip(name, { permanent: true, direction: 'right' });
+      markers[name] = marker;
+    }
+
+    let pathLine;
+
+    function findPath() {
+      const start = document.getElementById("start").value;
+      const end = document.getElementById("end").value;
+
+      if (!start || !end) {
+        alert("Please select both start and end locations.");
+        return;
+      }
+
+      fetch(`/find/?start=${start}&end=${end}`)
+        .then(res => {
+          if (!res.ok) throw new Error("Network response was not ok");
+          return res.text();
+        })
+        .then(text => {
+          console.log("Dijkstra output:", text);
+
+          // Extract node names from output text using regex, expect path line like: Bootcamp -> Ruins -> Quarry ...
+          const matches = [...text.matchAll(/([A-Za-z_]+)/g)].map(m => m[0]);
+          // Filter nodes that exist in your nodes dict
+          const path = matches.filter(name => nodes.hasOwnProperty(name));
+
+          if (path.length === 0) {
+            alert("No path found.");
+            return;
+          }
+
+          // Remove old path if exists
+          if (pathLine) {
+            map.removeLayer(pathLine);
+          }
+
+          // Get coordinates for the path nodes
+          const coords = path.map(name => nodes[name]);
+
+          // Draw the polyline path in yellow
+          pathLine = L.polyline(coords, { color: 'yellow', weight: 5, opacity: 0.8 }).addTo(map);
+
+          // Zoom the map to the path bounds
+          map.fitBounds(pathLine.getBounds());
+
+        })
+        .catch(error => {
+          alert("Error fetching path: " + error);
+          console.error(error);
+        });
+    }
+
+    // Optional: Log map clicks to get coordinates for adding new nodes
+    map.on('click', function (e) {
+      console.log("Map clicked at:", e.latlng);
+    });
+
+  </script>
+</body>
+</html>

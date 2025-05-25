@@ -1,7 +1,9 @@
-6
+8
 Bootcamp Ruins 423
 Bootcamp Paradise 367
 Ruins Quarry 397
 Paradise Quarry 313
 Bootcamp Quarry 335
 Camp_Alpha Ruins 278
+Paradise Camp_Alpha 594
+Camp_Alpha Bootcamp 704

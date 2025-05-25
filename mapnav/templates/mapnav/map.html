@@ -4,6 +4,7 @@
   <title>Sanhok Map</title>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     #map { height: 600px; }
   </style>
@@ -16,21 +17,18 @@
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script>
-    // Initialize map with CRS.Simple and set bounds correctly
     const map = L.map('map', {
       crs: L.CRS.Simple,
       minZoom: -1,
       maxZoom: 2
     });
 
-    // Define the bounds of the image and overlay
     const bounds = [[0, 0], [1000, 1000]];
     const image = L.imageOverlay("/static/mapnav/sanhok.jpg", bounds).addTo(map);
     map.fitBounds(bounds);
 
-    // Your node coordinates: [y, x] for Leaflet (lat, lng)
-    // Make sure to flip coordinates: Leaflet uses [lat, lng] = [y, x]
     const nodes = {
       "Bootcamp": [514.78, 453.77],
       "Paradise": [668.33, 675.64],
@@ -39,7 +37,6 @@
       "Camp_Alpha": [587.81, 218.55]
     };
 
-    // Populate dropdowns
     const dropdowns = ["start", "end"];
     dropdowns.forEach(id => {
       const sel = document.getElementById(id);
@@ -51,10 +48,8 @@
       });
     });
 
-    // Add markers on the map
     const markers = {};
     for (let name in nodes) {
-      // Note: Leaflet expects [lat, lng], so no flip needed if coords already correct
       const marker = L.circleMarker(nodes[name], {radius: 6, color: 'blue'}).addTo(map);
       marker.bindTooltip(name, { permanent: true, direction: 'right' });
       markers[name] = marker;
@@ -62,6 +57,8 @@
 
     let pathLine;
 
+    // This function fetches the shortest path from the backend
+    // and displays it on the map using polylines.
     function findPath() {
       const start = document.getElementById("start").value;
       const end = document.getElementById("end").value;
@@ -72,37 +69,37 @@
       }
 
       fetch(`/find/?start=${start}&end=${end}`)
-        .then(res => {
-          if (!res.ok) throw new Error("Network response was not ok");
-          return res.text();
-        })
-        .then(text => {
-          console.log("Dijkstra output:", text);
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            alert(data.error);
+            return;
+          }
 
-          // Extract node names from output text using regex, expect path line like: Bootcamp -> Ruins -> Quarry ...
-          const matches = [...text.matchAll(/([A-Za-z_]+)/g)].map(m => m[0]);
-          // Filter nodes that exist in your nodes dict
-          const path = matches.filter(name => nodes.hasOwnProperty(name));
-
-          if (path.length === 0) {
+          const segments = data.route;
+          if (!segments || segments.length === 0) {
             alert("No path found.");
             return;
           }
 
-          // Remove old path if exists
+          // Remove old path lines if any
           if (pathLine) {
-            map.removeLayer(pathLine);
+            if (Array.isArray(pathLine)) {
+              pathLine.forEach(line => map.removeLayer(line));
+            } else {
+              map.removeLayer(pathLine);
+            }
           }
 
-          // Get coordinates for the path nodes
-          const coords = path.map(name => nodes[name]);
+          // Draw each segment as a separate polyline
+          pathLine = segments.map(segment => {
+            const latlngs = segment.polyline.map(coord => [coord.lat, coord.lng]);
+            return L.polyline(latlngs, { color: 'yellow', weight: 5, opacity: 0.8 }).addTo(map);
+          });
 
-          // Draw the polyline path in yellow
-          pathLine = L.polyline(coords, { color: 'yellow', weight: 5, opacity: 0.8 }).addTo(map);
-
-          // Zoom the map to the path bounds
-          map.fitBounds(pathLine.getBounds());
-
+          // Fit map view to show all path segments
+          const group = L.featureGroup(pathLine);
+          map.fitBounds(group.getBounds());
         })
         .catch(error => {
           alert("Error fetching path: " + error);
@@ -110,11 +107,39 @@
         });
     }
 
-    // Optional: Log map clicks to get coordinates for adding new nodes
     map.on('click', function (e) {
       console.log("Map clicked at:", e.latlng);
     });
 
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      edit: {
+        featureGroup: drawnItems,
+        edit: true,
+        remove: true
+      },
+      draw: {
+        polyline: true,
+        polygon: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, function (e) {
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
+
+      if (layer instanceof L.Polyline) {
+        const coords = layer.getLatLngs();
+        console.log("Drawn polyline coordinates:", coords);
+      }
+    });
   </script>
 </body>
 </html>
